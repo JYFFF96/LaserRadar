@@ -116,11 +116,8 @@ void ExporterWorker::saveAsPCAP(const QString &path, const QList<QByteArray> &pk
     bool writeHeader = true;
 
     if (append && QFile::exists(path)) {
-        // 如果是追加模式，且文件存在且大小 >= 24，则已包含标准头
         QFileInfo info(file);
-        if (info.size() >= 24) {
-            writeHeader = false;
-        }
+        if (info.size() >= 24) writeHeader = false;
     }
 
     if (!file.open(append ? QFile::Append : QFile::WriteOnly)) {
@@ -131,13 +128,11 @@ void ExporterWorker::saveAsPCAP(const QString &path, const QList<QByteArray> &pk
     QDataStream out(&file);
     out.setByteOrder(QDataStream::LittleEndian);
 
-    // ✅ 写入标准 PCAP 全局头（如果需要）
     if (writeHeader) {
         PcapGlobalHeader gh;
         out.writeRawData(reinterpret_cast<const char*>(&gh), sizeof(gh));
     }
 
-    // 时间起点
     quint32 sec = QDateTime::currentSecsSinceEpoch();
     quint32 usec = 0;
 
@@ -152,7 +147,7 @@ void ExporterWorker::saveAsPCAP(const QString &path, const QList<QByteArray> &pk
         out.writeRawData(reinterpret_cast<const char*>(&ph), sizeof(ph));
         out.writeRawData(fullPacket.constData(), fullPacket.size());
 
-        usec += 556; // Fairy MSOP 发送间隔约 555.55us
+        usec += 667; // Helios16 手册：MSOP 发送间隔约 666.67 us
         if (usec >= 1000000) {
             sec += 1;
             usec -= 1000000;
@@ -164,33 +159,28 @@ QByteArray ExporterWorker::wrapUdpPacket(const QByteArray &payload)
 {
     QByteArray pkt;
 
-    // Ethernet Header: 14 字节 (目的 MAC + 源 MAC + 类型)
     pkt.append(QByteArray::fromHex("00112233445566778899aabb0800"));
 
-    // IP Header: 20 字节
     quint8 ipHeader[20] = {
-        0x45, 0x00, 0x00, 0x00, // version + IHL + TOS + total_length (待填)
-        0x00, 0x00, 0x40, 0x00, // ID, flags, frag_offset
-        0x40, 0x11, 0x00, 0x00, // TTL=64, protocol=UDP, checksum
-        192, 168, 1, 1,         // 源 IP
-        192, 168, 1, 2          // 目的 IP
+        0x45, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x40, 0x00,
+        0x40, 0x11, 0x00, 0x00,
+        192, 168, 1, 1,
+        192, 168, 1, 2
     };
     quint16 ipTotalLen = qToBigEndian<quint16>(20 + 8 + payload.size());
-    memcpy(&ipHeader[2], &ipTotalLen, 2);  // 设置 total_length 字段
+    memcpy(&ipHeader[2], &ipTotalLen, 2);
     pkt.append(reinterpret_cast<const char*>(ipHeader), 20);
 
-    // UDP Header: 8 字节 (src port + dst port + len + checksum)
     quint8 udpHeader[8] = {
-        0x1A, 0x0B, // 源端口（示例为 6667）
-        0x1A, 0x0C, // 目的端口（示例为 6668）
-        0x00, 0x00, // 长度字段（待填）
-        0x00, 0x00  // 校验（通常为 0）
+        0x1A, 0x0B,
+        0x1A, 0x0C,
+        0x00, 0x00,
+        0x00, 0x00
     };
     quint16 udpLen = qToBigEndian<quint16>(8 + payload.size());
-    memcpy(&udpHeader[4], &udpLen, 2);  // 设置 UDP 长度
+    memcpy(&udpHeader[4], &udpLen, 2);
     pkt.append(reinterpret_cast<const char*>(udpHeader), 8);
-
-    // 附加原始 Payload（如 1248 字节的激光数据）
     pkt.append(payload);
 
     return pkt;
