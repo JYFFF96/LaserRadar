@@ -2,90 +2,59 @@
 #include "PlaybackController.h"
 #include <QDebug>
 #include <QtEndian>
-
-namespace {
-constexpr int FAIRY_PACKET_SIZE = 1248;
-constexpr int FAIRY_HEADER_SIZE = 42;
-constexpr int FAIRY_BLOCK_COUNT = 8;
-constexpr int FAIRY_BLOCK_SIZE = 148;
-constexpr int FAIRY_CHANNELS = 48;
-constexpr int FAIRY_DATA_BLOCK_SIZE = FAIRY_BLOCK_COUNT * FAIRY_BLOCK_SIZE;
-constexpr double FAIRY_DISTANCE_RESOLUTION_M = 0.005; // 0.5 cm
-}
 PlaybackController::PlaybackController(QObject *parent)
     : QObject(parent) {}
 
 bool PlaybackController::loadPCAP(const QString &filePath)
 {
     QFile file(filePath);
-    if (!file.open(QIODevice::ReadOnly)) {
-        qWarning() << "Failed to open PCAP file:" << filePath;
-        return false;
-    }
-
-    frames.clear();
-    currentFrame = 0;
-
-    QDataStream stream(&file);
-    stream.setByteOrder(QDataStream::LittleEndian);
-    file.seek(24);
-
-    accumulatedAngle = 0;
-    lastAzimuth = 0;
-    collectingFrame = false;
+    if (!file.open(QIODevice::ReadOnly)) { qWarning() << "Failed to open PCAP file:" << filePath; return false; }
+    frames.clear(); currentFrame = 0; accumulatedAngle = 0; lastAzimuth = 0; collectingFrame = false;
+    QDataStream stream(&file); stream.setByteOrder(QDataStream::LittleEndian); file.seek(24);
     QList<PointXYZI> framePoints;
 
     while (!stream.atEnd()) {
         if (file.bytesAvailable() < 16) break;
-        char headerBuf[16];
-        file.read(headerBuf, 16);
-        quint32 incl_len = *reinterpret_cast<quint32*>(&headerBuf[8]);
+        char headerBuf[16]; if (file.read(headerBuf,16) != 16) break;
+        const quint32 incl_len = *reinterpret_cast<quint32*>(&headerBuf[8]);
+        if (incl_len < 42 + 1248) { file.seek(file.pos() + incl_len); continue; }
+        const QByteArray fullPacket = file.read(incl_len);
+        if (fullPacket.size() < 42 + 1248) continue;
+        const QByteArray payload = fullPacket.mid(42,1248);
+        if (quint8(payload[0]) != 0x55 || quint8(payload[1]) != 0xAA || quint8(payload[2]) != 0x05 || quint8(payload[3]) != 0x5A) continue;
+        if (quint8(payload[31]) != 0x06 || quint8(payload[32]) != 0x03) continue;
+        if (quint8(payload[1246]) != 0x00 || quint8(payload[1247]) != 0xFF) continue;
+        const QByteArray blk = payload.mid(42,1200);
 
-        if (incl_len < 42 + FAIRY_PACKET_SIZE) {
-            file.seek(file.pos() + incl_len);
-            continue;
+        float azimuths[12] = {};
+        bool blocksValid = true;
+        for (int i=0;i<12;++i) {
+            const QByteArray b=blk.mid(i*100,100);
+            if (b.size()<100 || quint8(b[0])!=0xFF || quint8(b[1])!=0xEE) { blocksValid=false; break; }
+            azimuths[i]=((quint8(b[2])<<8)|quint8(b[3]))/100.0f;
         }
+        if (!blocksValid) continue;
 
-        QByteArray fullPacket = file.read(incl_len);
-        if (fullPacket.size() < 42 + FAIRY_PACKET_SIZE) continue;
+        // 导出的 PCAP 通常只包含 MSOP，无法从文件内获知 DIFOP 回波模式。
+        // Helios16 出厂默认最强单回波，因此按单回波的第二组角度插值解析。
+        for (int i=0;i<12;++i) {
+            const QByteArray b=blk.mid(i*100,100); const float az1=azimuths[i];
+            float nextAz;
+            if (i<11) nextAz=azimuths[i+1];
+            else { float delta=az1-azimuths[10]; if(delta<0) delta+=360.0f; nextAz=az1+delta; if(nextAz>=360.0f) nextAz-=360.0f; }
+            float adjustedNext=nextAz; if(adjustedNext<az1) adjustedNext+=360.0f;
+            float az2=az1+(adjustedNext-az1)*0.5f; if(az2>=360.0f) az2-=360.0f;
 
-        QByteArray payload = fullPacket.mid(42, FAIRY_PACKET_SIZE);
-        const QByteArray blk = payload.mid(FAIRY_HEADER_SIZE, FAIRY_DATA_BLOCK_SIZE);
-
-        for (int i = 0; i < FAIRY_BLOCK_COUNT; ++i) {
-            QByteArray b = blk.mid(i * FAIRY_BLOCK_SIZE, FAIRY_BLOCK_SIZE);
-            if (b.size() < FAIRY_BLOCK_SIZE) continue;
-            if (quint8(b[0]) != 0xFF || quint8(b[1]) != 0xEE) continue;
-            float azimuth = ((quint8(b[2]) << 8) | quint8(b[3])) / 100.f;
-
-            if (!collectingFrame) {
-                collectingFrame = true;
-                accumulatedAngle = 0;
-            } else {
-                float delta = azimuth - lastAzimuth;
-                if (delta < 0) delta += 360;
-                accumulatedAngle += delta;
-            }
-
-            for (int j = 0; j < FAIRY_CHANNELS; ++j) {
-                const QByteArray d = b.mid(4 + j * 3, 3);
-                PointXYZI pt = parseChannel(d, azimuth, j);
-                framePoints.append(pt);
-            }
-
-            lastAzimuth = azimuth;
-
-            if (accumulatedAngle >= 360.0f) {
-                frames.append(framePoints);
-                framePoints.clear();
-                collectingFrame = false;
-                accumulatedAngle = 0;
-            }
+            if(!collectingFrame){ collectingFrame=true; accumulatedAngle=0.0f; }
+            else { float delta=az1-lastAzimuth; if(delta<0) delta+=360.0f; accumulatedAngle+=delta; }
+            for(int j=0;j<16;++j) framePoints.append(parseChannel(b.mid(4+j*3,3),az1,j));
+            for(int j=0;j<16;++j) framePoints.append(parseChannel(b.mid(4+(16+j)*3,3),az2,j));
+            lastAzimuth=az1;
+            if(accumulatedAngle>=360.0f){ frames.append(framePoints); framePoints.clear(); collectingFrame=false; accumulatedAngle=0.0f; }
         }
     }
-    if (!framePoints.isEmpty()) frames.append(framePoints);
-    file.close();
-    return !frames.isEmpty();
+    if(!framePoints.isEmpty()) frames.append(framePoints);
+    file.close(); return !frames.isEmpty();
 }
 
 double PlaybackController::parseHeader(const QByteArray &h)
@@ -98,20 +67,15 @@ double PlaybackController::parseHeader(const QByteArray &h)
 
 PointXYZI PlaybackController::parseChannel(const QByteArray &d, float azimuth, int channel)
 {
-    quint16 dist = (quint8(d[0]) << 8) | quint8(d[1]);
-    dist &= 0x7FFF;
-    quint8 inten = quint8(d[2]);
-
-    double dd = dist * FAIRY_DISTANCE_RESOLUTION_M;
-    const CartesianCoordinates position =
-        fairyToCartesian(dd, azimuth, COR_VERT_ANG.value(channel, 0.0f));
-
-    PointXYZI pt;
-    pt.x = static_cast<float>(position.x);
-    pt.y = static_cast<float>(position.y);
-    pt.z = static_cast<float>(position.z);
-    pt.intensity = inten;
-    return pt;
+    if (d.size() < 3 || channel < 0 || channel >= 16) return {};
+    const quint16 dist = (quint8(d[0]) << 8) | quint8(d[1]);
+    const quint8 inten = quint8(d[2]);
+    const double dd = dist * 0.0025;
+    double correctedAzimuth = azimuth + COR_HOR_ANG.value(channel, 0.0f);
+    while (correctedAzimuth >= 360.0) correctedAzimuth -= 360.0;
+    while (correctedAzimuth < 0.0) correctedAzimuth += 360.0;
+    const CartesianCoordinates pos = helios16ToCartesian(dd, correctedAzimuth, COR_VERT_ANG.value(channel, 0.0f));
+    return {static_cast<float>(pos.x), static_cast<float>(pos.y), static_cast<float>(pos.z), static_cast<float>(inten)};
 }
 
 void PlaybackController::start()
@@ -150,8 +114,9 @@ void PlaybackController::setLoop(bool enabled)
 void PlaybackController::setSpeed(double speed)
 {
     playbackSpeed = speed;
-    if (isPlaying && playbackTimer)
+    if (isPlaying && playbackTimer) {
         playbackTimer->setInterval(static_cast<int>(1000.0 / (playbackSpeed * 10)));
+    }
 }
 
 int PlaybackController::frameCount() const
@@ -166,6 +131,6 @@ void PlaybackController::onPlaybackTick()
         else { pause(); return; }
     }
 
-    emit frameReady(frames[currentFrame], currentFrame);
+    emit frameReady( frames[currentFrame], currentFrame);
     ++currentFrame;
 }
