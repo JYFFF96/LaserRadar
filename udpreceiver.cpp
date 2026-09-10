@@ -184,13 +184,11 @@ void UdpReceiver::parseChannelData(const QByteArray &d,float az,int idx,double R
     quint8 inten = quint8(d[2]);
 
     double dd = rawDist * FAIRY_DISTANCE_RESOLUTION_M;
-    double om = az * M_PI / 180.0;
-    double al = COR_VERT_ANG[idx] * M_PI / 180.0;
-
-    // 与当前界面坐标系保持一致：X 方向已校正，Y 方向取反。
-    double x = dd * cos(al) * sin(om);
-    double y = -dd * cos(al) * cos(om);
-    double z = dd * sin(al);
+    // 底层数据始终保持 Fairy 原生真实坐标；显示方向只由视图矩阵控制。
+    const CartesianCoordinates position = fairyToCartesian(dd, az, COR_VERT_ANG[idx]);
+    const double x = position.x;
+    const double y = position.y;
+    const double z = position.z;
 
     pointList.append({static_cast<float>(x),static_cast<float>(y),static_cast<float>(z),static_cast<float>(inten)});
     pointDataList.append({t,x,y,z,az,dd,static_cast<float>(inten),idx});

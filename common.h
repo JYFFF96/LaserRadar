@@ -8,6 +8,30 @@
 #include <Eigen/Geometry>
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
+#include <cmath>
+
+struct CartesianCoordinates {
+    double x;
+    double y;
+    double z;
+};
+
+// Fairy 原生右手坐标系：X = r cos(vertical) sin(azimuth)，
+// Y = r cos(vertical) cos(azimuth)，Z = r sin(vertical)。
+inline CartesianCoordinates fairyToCartesian(double distance,
+                                              double azimuthDegrees,
+                                              double verticalDegrees)
+{
+    constexpr double degreesToRadians = 3.14159265358979323846 / 180.0;
+    const double azimuth = azimuthDegrees * degreesToRadians;
+    const double vertical = verticalDegrees * degreesToRadians;
+    return {
+        distance * std::cos(vertical) * std::sin(azimuth),
+        distance * std::cos(vertical) * std::cos(azimuth),
+        distance * std::sin(vertical)
+    };
+}
+
 struct PointXYZI {
     float x; // X坐标
     float y; // Y坐标

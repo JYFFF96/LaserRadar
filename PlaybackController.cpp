@@ -103,13 +103,13 @@ PointXYZI PlaybackController::parseChannel(const QByteArray &d, float azimuth, i
     quint8 inten = quint8(d[2]);
 
     double dd = dist * FAIRY_DISTANCE_RESOLUTION_M;
-    double om = azimuth * M_PI / 180.0;
-    double al = COR_VERT_ANG.value(channel, 0.0f) * M_PI / 180.0;
+    const CartesianCoordinates position =
+        fairyToCartesian(dd, azimuth, COR_VERT_ANG.value(channel, 0.0f));
 
     PointXYZI pt;
-    pt.x = dd * cos(al) * sin(om);
-    pt.y = -dd * cos(al) * cos(om);
-    pt.z = dd * sin(al);
+    pt.x = static_cast<float>(position.x);
+    pt.y = static_cast<float>(position.y);
+    pt.z = static_cast<float>(position.z);
     pt.intensity = inten;
     return pt;
 }

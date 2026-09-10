@@ -8,6 +8,12 @@
 #include <unordered_map>
 #include <algorithm>
 using std::vector;
+
+namespace {
+// 纯显示旋转：不改变 points 中保存的 Fairy 原生坐标。
+constexpr float DEFAULT_VIEW_Z_ROTATION_DEG = 90.0f;
+}
+
 static inline QVector3D mul(const QMatrix3x3& M,const QVector3D& v){
     return { M(0,0)*v.x()+M(0,1)*v.y()+M(0,2)*v.z(),
             M(1,0)*v.x()+M(1,1)*v.y()+M(1,2)*v.z(),
@@ -235,7 +241,7 @@ void SimplePointCloudView::paintGL()
     glTranslatef(0, 0, -zoom * 50.0f); // 控制相机距原点距离
     glRotatef(xRot, 1, 0, 0);           // 控制上下俯仰（Pitch）
     glRotatef(yRot, 0, 1, 0);           // 控制左右水平旋转（Yaw）
-    glRotatef(-270.0f, 0, 0, 1);
+    glRotatef(DEFAULT_VIEW_Z_ROTATION_DEG, 0, 0, 1);
 
     drawGrid();
     drawPointCloud();
@@ -399,8 +405,8 @@ void SimplePointCloudView::drawHudCoordinateAxes()
     rot.setToIdentity();
     rot.rotate(xRot, 1, 0, 0);
     rot.rotate(yRot, 0, 1, 0);
-    // 与场景一致：绕 Z -90°
-    rot.rotate(-270.0f, 0, 0, 1);
+    // 与场景使用完全相同的纯显示旋转，HUD 表达的仍是原生 X/Y/Z 正方向。
+    rot.rotate(DEFAULT_VIEW_Z_ROTATION_DEG, 0, 0, 1);
 
     QVector3D origin(80, 80, 0);  // 屏幕左下角起点
     QVector3D xAxis = rot * QVector3D(1, 0, 0);
