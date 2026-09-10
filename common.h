@@ -16,8 +16,16 @@ struct CartesianCoordinates {
     double z;
 };
 
-// Fairy 原生右手坐标系：X = r cos(vertical) sin(azimuth)，
-// Y = r cos(vertical) cos(azimuth)，Z = r sin(vertical)。
+// Fairy 原始极坐标先换算为厂商坐标：
+// rawX = r cos(vertical) sin(azimuth)
+// rawY = r cos(vertical) cos(azimuth)
+// rawZ = r sin(vertical)
+//
+// 工程坐标轴按现场定义统一重映射：
+// X = 原 Y 方向
+// Y = 原 X 的反方向
+// Z = 原 Z 方向
+// 即：X = rawY，Y = -rawX，Z = rawZ。
 inline CartesianCoordinates fairyToCartesian(double distance,
                                               double azimuthDegrees,
                                               double verticalDegrees)
@@ -25,10 +33,15 @@ inline CartesianCoordinates fairyToCartesian(double distance,
     constexpr double degreesToRadians = 3.14159265358979323846 / 180.0;
     const double azimuth = azimuthDegrees * degreesToRadians;
     const double vertical = verticalDegrees * degreesToRadians;
+
+    const double rawX = distance * std::cos(vertical) * std::sin(azimuth);
+    const double rawY = distance * std::cos(vertical) * std::cos(azimuth);
+    const double rawZ = distance * std::sin(vertical);
+
     return {
-        distance * std::cos(vertical) * std::sin(azimuth),
-        distance * std::cos(vertical) * std::cos(azimuth),
-        distance * std::sin(vertical)
+        rawY,
+        -rawX,
+        rawZ
     };
 }
 
