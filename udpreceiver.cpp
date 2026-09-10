@@ -192,9 +192,13 @@ void UdpReceiver::parseChannelData(const QByteArray &d,float az,int idx,double R
     double dd = rawDist * FAIRY_DISTANCE_RESOLUTION_M;
     double om = az * M_PI / 180.0;
     double al = COR_VERT_ANG[idx] * M_PI / 180.0;
-    double x = dd * cos(al) * cos(om); // 前
-    double y = dd * cos(al) * sin(om); // 左
-    double z = dd * sin(al);           // 上
+
+    // Fairy 产品手册坐标映射：X 使用 sin(azimuth)，Y 使用 cos(azimuth)。
+    // 旧实现将二者写反，导致点云 X/Y 方向与 Fairy/RSView 坐标系不一致。
+    double x = dd * cos(al) * sin(om);
+    double y = dd * cos(al) * cos(om);
+    double z = dd * sin(al);
+
     pointList.append({static_cast<float>(x),static_cast<float>(y),static_cast<float>(z),static_cast<float>(inten)});
     pointDataList.append({t,x,y,z,az,dd,static_cast<float>(inten),idx});
 }
