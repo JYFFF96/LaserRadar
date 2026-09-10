@@ -16,35 +16,18 @@ struct CartesianCoordinates {
     double z;
 };
 
-// Fairy 原始极坐标先换算为厂商坐标：
-// rawX = r cos(vertical) sin(azimuth)
-// rawY = r cos(vertical) cos(azimuth)
-// rawZ = r sin(vertical)
-//
-// 工程坐标轴按现场定义统一重映射：
-// X = 原 Y 方向
-// Y = 原 X 的反方向
-// Z = 原 Z 方向
-// 即：X = rawY，Y = -rawX，Z = rawZ。
-inline CartesianCoordinates fairyToCartesian(double distance,
-                                              double azimuthDegrees,
-                                              double verticalDegrees)
+// Helios16 厂商原始坐标：rawX=r*cos(v)*sin(a), rawY=r*cos(v)*cos(a), rawZ=r*sin(v)。
+// 工程坐标与 Fairy 48 线版本保持一致：X=rawY, Y=-rawX, Z=rawZ。
+inline CartesianCoordinates helios16ToCartesian(double distance, double azimuthDegrees, double verticalDegrees)
 {
-    constexpr double degreesToRadians = 3.14159265358979323846 / 180.0;
-    const double azimuth = azimuthDegrees * degreesToRadians;
-    const double vertical = verticalDegrees * degreesToRadians;
-
-    const double rawX = distance * std::cos(vertical) * std::sin(azimuth);
-    const double rawY = distance * std::cos(vertical) * std::cos(azimuth);
-    const double rawZ = distance * std::sin(vertical);
-
-    return {
-        rawY,
-        -rawX,
-        rawZ
-    };
+    constexpr double deg2rad = 3.14159265358979323846 / 180.0;
+    const double a = azimuthDegrees * deg2rad;
+    const double v = verticalDegrees * deg2rad;
+    const double rawX = distance * std::cos(v) * std::sin(a);
+    const double rawY = distance * std::cos(v) * std::cos(a);
+    const double rawZ = distance * std::sin(v);
+    return { rawY, -rawX, rawZ };
 }
-
 struct PointXYZI {
     float x; // X坐标
     float y; // Y坐标
@@ -135,6 +118,7 @@ struct DifopInfo {
     quint8 rainMode;
 };
 extern QVector<float> COR_VERT_ANG;
+extern QVector<float> COR_HOR_ANG;
 
 class common
 {
