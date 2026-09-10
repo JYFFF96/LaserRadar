@@ -112,9 +112,10 @@ PointXYZI PlaybackController::parseChannel(const QByteArray &d, float azimuth, i
     double al = COR_VERT_ANG.value(channel, 0.0f) * M_PI / 180.0;
 
     PointXYZI pt;
-    pt.x = dd * cos(al) * cos(om); // 前
-    pt.y = dd * cos(al) * sin(om); // 左
-    pt.z = dd * sin(al);           // 上
+    // 与 Fairy 产品手册及实时解析保持一致：X=sin(azimuth)，Y=cos(azimuth)。
+    pt.x = dd * cos(al) * sin(om);
+    pt.y = dd * cos(al) * cos(om);
+    pt.z = dd * sin(al);
     pt.intensity = inten;
 
     return pt;
