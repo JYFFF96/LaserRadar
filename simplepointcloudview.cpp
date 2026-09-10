@@ -11,7 +11,8 @@ using std::vector;
 
 namespace {
 // 纯显示旋转：不改变 points 中保存的 Fairy 原生坐标。
-constexpr float DEFAULT_VIEW_Z_ROTATION_DEG = 90.0f;
+// 默认视角要求：X 轴朝屏幕左侧，Z 轴朝屏幕上方。
+constexpr float DEFAULT_VIEW_Z_ROTATION_DEG = 180.0f;
 }
 
 static inline QVector3D mul(const QMatrix3x3& M,const QVector3D& v){
@@ -209,7 +210,7 @@ SimplePointCloudView::SimplePointCloudView(QWidget *parent)
 {
     setFocusPolicy(Qt::StrongFocus);
     zoom = 1.0f;
-    xRot = -70.0f;  // 让 Z 轴朝上（从 XY 平面转到 XZ）
+    xRot = -70.0f;  // 保持一定俯视角，同时让 Z 轴朝屏幕上方
     yRot = 0.0f;
 }
 
@@ -334,8 +335,6 @@ void SimplePointCloudView::drawGrid()
     glEnd();
 }
 
-
-
 void SimplePointCloudView::drawTextStroke3D(const QVector3D &pos, const QString &text, const QColor &color)
 {
     glPushMatrix();
@@ -446,24 +445,7 @@ void SimplePointCloudView::drawHudCoordinateAxes()
     drawArrow(yEnd, yAxis, QColor(0, 255, 0));
     drawArrow(zEnd, zAxis, QColor(0, 0, 255));
 
-    // ---- 绘制 X/Y/Z 标签（屏幕空间 + 旋转矩阵） ----
-    auto drawHudLabel = [this](const QVector3D &anchor, const QString &text, const QColor &color, const QMatrix4x4 &rotation) {
-        glPushMatrix();
-        glTranslatef(anchor.x(), anchor.y(), 0);             // 位置
-        glMultMatrixf(rotation.constData());                 // 旋转
-        glScalef(1.0f, 1.0f, 0.1f);                           // 缩放
-        auto outlines = generateTextPath3D(text, QFont("Arial", 20, QFont::Bold));
-        glColor3f(color.redF(), color.greenF(), color.blueF());
-        for (const auto& contour : outlines) {
-            glBegin(GL_LINE_STRIP);
-            for (const auto& pt : contour) {
-                glVertex3f(pt.x(), pt.y(), 0);
-            }
-            glEnd();
-        }
-        glPopMatrix();
-    };
-
+    // ---- 绘制 X/Y/Z 标签（屏幕空间） ----
     float labelOffset = 10.0f;
     drawHudBillboardText(xEnd + xAxis.normalized() * labelOffset, "X", Qt::red);
     drawHudBillboardText(yEnd + yAxis.normalized() * labelOffset, "Y", Qt::green);
@@ -477,13 +459,13 @@ void SimplePointCloudView::drawHudCoordinateAxes()
 
     glEnable(GL_DEPTH_TEST);
     glDepthMask(GL_TRUE);
-
 }
+
 void SimplePointCloudView::drawHudBillboardText(const QVector3D &screenPos, const QString &text, const QColor &color)
 {
     glPushMatrix();
     glTranslatef(screenPos.x(), screenPos.y(), 0);  // 平移到目标屏幕位置
-    glScalef(0.5f, 0.5f, 1.0f);                      // 适当缩放
+    glScalef(0.5f, 0.5f, 1.0f);                    // 适当缩放
 
     std::vector<QVector<QVector3D>> outlines = generateTextPath3D(text, QFont("Arial", 20, QFont::Bold));
 
@@ -547,4 +529,3 @@ void SimplePointCloudView::drawOBBs()
         glEnd();
     }
 }
-
