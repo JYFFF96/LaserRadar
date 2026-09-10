@@ -78,8 +78,8 @@ private:
     QList<PointData> pointDataList;
     QList<QByteArray> pcapPacketsBuffer;
 
-    // QVector<float> COR_VERT_ANG;
-    QVector<float> COR_HOR_ANG;
+    // Helios16 默认最强回波；收到 DIFOP 后更新。0x00=双回波。
+    quint8 returnMode = 0x04;
 
     bool exportActive = false;
     int exportFrameCounter = 0;
