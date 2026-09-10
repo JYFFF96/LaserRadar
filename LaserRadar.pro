@@ -1,5 +1,8 @@
 QT       += core gui network opengl openglwidgets svgwidgets webenginewidgets
 
+TARGET = LaserRadar_Helios16
+DEFINES += HELIOS16_LIDAR
+
 greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
 greaterThan(QT_MAJOR_VERSION, 5): QT += opengl
 CONFIG += c++17
@@ -60,7 +63,7 @@ LIBS += -lUser32
 LIBS += -lopengl32
 LIBS += -lglu32
 
-# PCL 路径 (你自己的路径)
+# PCL 路径（Helios16 分支，按当前 Windows/vcpkg 环境）
 PCL_ROOT = D:/PCL/vcpkg/installed/x64-windows
 
 # 头文件路径
@@ -127,5 +130,7 @@ else: unix:!android: target.path = /opt/$${TARGET}/bin
 
 RESOURCES += \
     resource.qrc
-QMAKE_CXXFLAGS += /bigobj
+win32-msvc {
+    QMAKE_CXXFLAGS += /bigobj
+}
 RC_FILE = logo.rc
