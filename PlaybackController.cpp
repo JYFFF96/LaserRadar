@@ -28,7 +28,7 @@ bool PlaybackController::loadPCAP(const QString &filePath)
 
     QDataStream stream(&file);
     stream.setByteOrder(QDataStream::LittleEndian);
-    file.seek(24);  // 跳过 PCAP 全局头
+    file.seek(24);
 
     accumulatedAngle = 0;
     lastAzimuth = 0;
@@ -36,7 +36,6 @@ bool PlaybackController::loadPCAP(const QString &filePath)
     QList<PointXYZI> framePoints;
 
     while (!stream.atEnd()) {
-        // 读取 Packet Header（16 字节）
         if (file.bytesAvailable() < 16) break;
         char headerBuf[16];
         file.read(headerBuf, 16);
@@ -47,11 +46,9 @@ bool PlaybackController::loadPCAP(const QString &filePath)
             continue;
         }
 
-        // 读取整个 UDP 封装包（含以太网/IP/UDP 头 + payload）
         QByteArray fullPacket = file.read(incl_len);
         if (fullPacket.size() < 42 + FAIRY_PACKET_SIZE) continue;
 
-        // ✅ 提取雷达数据 Payload
         QByteArray payload = fullPacket.mid(42, FAIRY_PACKET_SIZE);
         const QByteArray blk = payload.mid(FAIRY_HEADER_SIZE, FAIRY_DATA_BLOCK_SIZE);
 
@@ -86,9 +83,7 @@ bool PlaybackController::loadPCAP(const QString &filePath)
             }
         }
     }
-    if (!framePoints.isEmpty()) {
-        frames.append(framePoints);
-    }
+    if (!framePoints.isEmpty()) frames.append(framePoints);
     file.close();
     return !frames.isEmpty();
 }
@@ -112,12 +107,10 @@ PointXYZI PlaybackController::parseChannel(const QByteArray &d, float azimuth, i
     double al = COR_VERT_ANG.value(channel, 0.0f) * M_PI / 180.0;
 
     PointXYZI pt;
-    // 与 Fairy 产品手册及实时解析保持一致：X=sin(azimuth)，Y=cos(azimuth)。
     pt.x = dd * cos(al) * sin(om);
-    pt.y = dd * cos(al) * cos(om);
+    pt.y = -dd * cos(al) * cos(om);
     pt.z = dd * sin(al);
     pt.intensity = inten;
-
     return pt;
 }
 
@@ -157,9 +150,8 @@ void PlaybackController::setLoop(bool enabled)
 void PlaybackController::setSpeed(double speed)
 {
     playbackSpeed = speed;
-    if (isPlaying && playbackTimer) {
+    if (isPlaying && playbackTimer)
         playbackTimer->setInterval(static_cast<int>(1000.0 / (playbackSpeed * 10)));
-    }
 }
 
 int PlaybackController::frameCount() const
@@ -174,6 +166,6 @@ void PlaybackController::onPlaybackTick()
         else { pause(); return; }
     }
 
-    emit frameReady( frames[currentFrame], currentFrame);
+    emit frameReady(frames[currentFrame], currentFrame);
     ++currentFrame;
 }
