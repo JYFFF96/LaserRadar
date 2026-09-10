@@ -82,42 +82,33 @@ LIBS += -lpcl_surface
 LIBS += -llz4
 #LIBS += -lpcl_visualization
 # 你还可以按需加更多 PCL 组件
-# 自动 copy DLL 到 exe 目录
+# 自动复制 PCL / libLAS DLL 到 exe 目录
 win32 {
     DLLDIR = $$PCL_ROOT/bin
 
     CONFIG(debug, debug|release) {
         OUTDIR = $$OUT_PWD/debug
+        DEPLOY_LIBLAS_DLL = $$LIBLAS_ROOT/debug/bin
     } else {
         OUTDIR = $$OUT_PWD/output
-
-        # Release EXE输出目录
         DESTDIR = $$OUT_PWD/output
+        DEPLOY_LIBLAS_DLL = $$LIBLAS_ROOT/bin
     }
 
     message("DLLDIR = $$DLLDIR")
     message("OUTDIR = $$OUTDIR")
+    message("DEPLOY_LIBLAS_DLL = $$DEPLOY_LIBLAS_DLL")
 
-    system(cmd /c copy /Y \"$$DLLDIR\\pcl_*.dll\" \"$$OUTDIR\")
-    system(cmd /c copy /Y \"$$DLLDIR\\boost_*.dll\" \"$$OUTDIR\")
-    system(cmd /c copy /Y \"$$DLLDIR\\flann*.dll\" \"$$OUTDIR\")
-    system(cmd /c copy /Y \"$$DLLDIR\\lz4.dll\" \"$$OUTDIR\")
-    system(cmd /c copy /Y \"$$DLLDIR\\qhull_r.dll\" \"$$OUTDIR\")
-}
-win32 {
-    CONFIG(debug, debug|release) {
-        OUTDIR = $$OUT_PWD/debug
-        DEPLOY_LIBLAS_DLL = $$LIBLAS_ROOT/debug/bin
-    } else {
-        OUTDIR = $$OUT_PWD/output
+    # 必须先创建目录，避免 Windows copy 将 debug/output 当作普通文件名
+    system(cmd /c if not exist \"$$OUTDIR\" mkdir \"$$OUTDIR\")
 
-        # Release EXE输出目录
-        DESTDIR = $$OUT_PWD/output
-
-        DEPLOY_LIBLAS_DLL = $$LIBLAS_ROOT/bin
-    }
-
-    system(cmd /c copy /Y \"$$DEPLOY_LIBLAS_DLL\\*.dll\" \"$$OUTDIR\")
+    # 目标路径末尾明确添加反斜杠，确保 copy 按目录处理
+    system(cmd /c copy /Y \"$$DLLDIR\\pcl_*.dll\" \"$$OUTDIR\\\")
+    system(cmd /c copy /Y \"$$DLLDIR\\boost_*.dll\" \"$$OUTDIR\\\")
+    system(cmd /c copy /Y \"$$DLLDIR\\flann*.dll\" \"$$OUTDIR\\\")
+    system(cmd /c copy /Y \"$$DLLDIR\\lz4.dll\" \"$$OUTDIR\\\")
+    system(cmd /c copy /Y \"$$DLLDIR\\qhull_r.dll\" \"$$OUTDIR\\\")
+    system(cmd /c copy /Y \"$$DEPLOY_LIBLAS_DLL\\*.dll\" \"$$OUTDIR\\\")
 }
 
 # Default rules for deployment.
