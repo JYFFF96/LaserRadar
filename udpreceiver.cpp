@@ -145,10 +145,7 @@ void UdpReceiver::parseDataBlock(const QByteArray &blk)
         const QByteArray b = blk.mid(i * FAIRY_BLOCK_SIZE, FAIRY_BLOCK_SIZE);
         if (b.size() < FAIRY_BLOCK_SIZE) continue;
 
-        // Fairy Data Block: 0~1 为 0xFFEE，2~3 为方位角，4 开始为 48 路通道数据。
-        if (quint8(b[0]) != 0xFF || quint8(b[1]) != 0xEE) {
-            continue;
-        }
+        if (quint8(b[0]) != 0xFF || quint8(b[1]) != 0xEE) continue;
 
         float az = ((quint8(b[2]) << 8) | quint8(b[3])) / 100.0f;
         if (!collectingFrame) {
@@ -156,14 +153,12 @@ void UdpReceiver::parseDataBlock(const QByteArray &blk)
             accumulatedAngle = 0;
         } else {
             float d = az - lastAzimuth;
-            if (d < 0)
-                d += 360;
+            if (d < 0) d += 360;
             accumulatedAngle += d;
         }
 
-        for (int j = 0; j < FAIRY_CHANNELS; ++j) {
+        for (int j = 0; j < FAIRY_CHANNELS; ++j)
             parseChannelData(b.mid(4 + j * 3, 3), az, j, 0.0, currentTimestamp);
-        }
 
         lastAzimuth = az;
         if (accumulatedAngle >= 360.0f) {
@@ -184,7 +179,6 @@ void UdpReceiver::parseChannelData(const QByteArray &d,float az,int idx,double R
     Q_UNUSED(R);
     if (d.size() < 3 || idx < 0 || idx >= COR_VERT_ANG.size()) return;
 
-    // Fairy: Distance 取低 15 bits，分辨率 0.5 cm。
     quint16 rawDist = (quint8(d[0]) << 8) | quint8(d[1]);
     rawDist &= 0x7FFF;
     quint8 inten = quint8(d[2]);
@@ -193,10 +187,9 @@ void UdpReceiver::parseChannelData(const QByteArray &d,float az,int idx,double R
     double om = az * M_PI / 180.0;
     double al = COR_VERT_ANG[idx] * M_PI / 180.0;
 
-    // Fairy 产品手册坐标映射：X 使用 sin(azimuth)，Y 使用 cos(azimuth)。
-    // 旧实现将二者写反，导致点云 X/Y 方向与 Fairy/RSView 坐标系不一致。
+    // 与当前界面坐标系保持一致：X 方向已校正，Y 方向取反。
     double x = dd * cos(al) * sin(om);
-    double y = dd * cos(al) * cos(om);
+    double y = -dd * cos(al) * cos(om);
     double z = dd * sin(al);
 
     pointList.append({static_cast<float>(x),static_cast<float>(y),static_cast<float>(z),static_cast<float>(inten)});
@@ -205,7 +198,6 @@ void UdpReceiver::parseChannelData(const QByteArray &d,float az,int idx,double R
 
 bool UdpReceiver::parseVerticalAndHorizontalAngles(const QByteArray &d)
 {
-    // Fairy DIFOP: 垂直角校准 offset 468，长度 288；水平角校准 offset 756，长度 288。
     if (d.size() < FAIRY_DIFOP_HOR_ANG_OFFSET + FAIRY_DIFOP_ANGLE_BYTES) return false;
 
     QVector<float> v(FAIRY_DIFOP_ANGLE_BYTES / 3);
@@ -219,7 +211,6 @@ bool UdpReceiver::parseVerticalAndHorizontalAngles(const QByteArray &d)
         h[i] = parseSignedAngle3Bytes(r[ho], r[ho + 1], r[ho + 2]);
     }
 
-    // Fairy 手册里的校准表是 96 路，当前 MSOP 只用前 48 路通道。
     COR_VERT_ANG = v.mid(0, FAIRY_CHANNELS);
     COR_HOR_ANG  = h.mid(0, FAIRY_CHANNELS);
     return true;
@@ -245,8 +236,6 @@ void UdpReceiver::handleExportFrame()
     if (currentExportParams.frameType == rangeFrame &&
         exportFrameCounter > currentExportParams.endFrame - currentExportParams.startFrame)
         finish = true;
-    // 发出异步写入信号（Exporter 线程处理）
-    // emit exportFrameReady(currentExportParams, pointDataList, pointList, pcapPacketsBuffer);
     qDebug() << "exportFrameReady : " << QDateTime::currentDateTime().toString("hh:mm:ss.zzz");
     exporter->enqueueFrame(currentExportParams, pointDataList, pointList, pcapPacketsBuffer);
 
@@ -275,20 +264,13 @@ void UdpReceiver::parseDIFOPPacket(const QByteArray &data)
         qWarning() << "DIFOP 不完整";
         return;
     }
-    if (!(quint8(data[0]) == 0xA5 &&
-          quint8(data[1]) == 0xFF &&
-          quint8(data[2]) == 0x00 &&
-          quint8(data[3]) == 0x5A)) {
+    if (!(quint8(data[0]) == 0xA5 && quint8(data[1]) == 0xFF && quint8(data[2]) == 0x00 && quint8(data[3]) == 0x5A)) {
         qWarning() << "包头不对";
         return;
     }
 
     DifopInfo info;
-    // --------- 1. Fairy 电机实时转速 (offset 373, 2 bytes) ---------
     info.speed = static_cast<quint8>(data[373]) << 8 | static_cast<quint8>(data[374]);
-
-    // --------- 2. Fairy 以太网信息 ---------
-    // source IP:10, dest IP:14, MAC:18, MSOP:24, DIFOP:28
     int offset = 18;
 
     QString lidarIp = QString("%1.%2.%3.%4")
@@ -312,29 +294,12 @@ void UdpReceiver::parseDIFOPPacket(const QByteArray &data)
     quint16 msopPort = static_cast<quint8>(data[24]) << 8 | static_cast<quint8>(data[25]);
     quint16 difopPort = static_cast<quint8>(data[28]) << 8 | static_cast<quint8>(data[29]);
 
-    info.netInfo = InternetInfo {
-        lidarIp,
-        destIp,
-        macAddr,
-        msopPort,
-        difopPort
-    };
-
-    // --------- 3. FOV 设置 (offset 32, 4 bytes) ---------
+    info.netInfo = InternetInfo { lidarIp, destIp, macAddr, msopPort, difopPort };
     info.fov_start = (static_cast<quint8>(data[32]) << 8 | static_cast<quint8>(data[33])) / 100;
     info.fov_end   = (static_cast<quint8>(data[34]) << 8 | static_cast<quint8>(data[35])) / 100;
-
-    // --------- 4. 电机锁相相位 (offset 38, 2 bytes) ---------
     info.mot_phase = static_cast<quint8>(data[38]) << 8 | static_cast<quint8>(data[39]);
-
-    // --------- 5. 回波（返回）模式 (offset 300, 1 byte) ---------
     info.returnMode = static_cast<quint8>(data[300]);
-
-    // --------- 6. Fairy 无雨雾模式字段，这里置 0，避免沿用 Helios16 的 offset 302 ---------
     info.rainMode = 0;
-
-    // --------- 7. 时间同步信息 (offset 301:方式，302:状态) ---------
     info.timeSyncInfo.type   = static_cast<quint8>(data[301]);
     info.timeSyncInfo.status = static_cast<quint8>(data[302]);
-
 }
