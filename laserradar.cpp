@@ -966,7 +966,7 @@ void LaserRadar::on_checkBox_disable_clicked()
 
 void LaserRadar::on_label_link_linkActivated(const QString &link)
 {
-    SvgDialog dlg(":/images/laser.svg");
+    ImageDialog dlg(":/images/laser.jpg");
     dlg.exec();
 }
 

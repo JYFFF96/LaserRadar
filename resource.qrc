@@ -25,6 +25,7 @@
         <file>images/radio_unchecked.png</file>
         <file>images/laser.svg</file>
         <file>images/btn_close.png</file>
+        <file>images/laser.jpg</file>
     </qresource>
     <qresource prefix="/qss">
         <file>style.qss</file>

@@ -174,4 +174,73 @@ public:
     }
 };
 
+
+#include <QLabel>
+#include <QPixmap>
+#include <QScrollArea>
+#include <QVBoxLayout>
+#include <QHBoxLayout>
+#include <QPushButton>
+#include <QFileInfo>
+class ImageDialog : public QDialog
+{
+public:
+    ImageDialog(const QString &imageFile, QWidget *parent = nullptr)
+        : QDialog(parent)
+    {
+        setWindowTitle(tr("激光雷达坐标及旋转方向示意图"));
+
+        resize(900,700);
+
+        m_imageLabel = new QLabel(this);
+        m_imageLabel->setAlignment(Qt::AlignCenter);
+        m_imageLabel->setStyleSheet(
+            "background-color: rgb(255,255,255);");
+        QPixmap pix(imageFile);
+
+        if(!pix.isNull())
+        {
+            m_imageLabel->setPixmap(
+                pix.scaled(
+                    850,
+                    600,
+                    Qt::KeepAspectRatio,
+                    Qt::SmoothTransformation));
+        }
+        else
+        {
+            m_imageLabel->setText(tr("示意图加载失败！"));
+        }
+
+        m_scrollArea = new QScrollArea(this);
+        m_scrollArea->setWidget(m_imageLabel);
+        m_scrollArea->setWidgetResizable(true);
+        m_scrollArea->setAlignment(Qt::AlignCenter);
+
+        m_textLabel = new QLabel(
+            tr("激光雷达的坐标原点定义在激光雷达底座中心处"),
+            this);
+
+        m_textLabel->setAlignment(Qt::AlignCenter);
+        m_textLabel->setWordWrap(true);
+
+        QFont font = m_textLabel->font();
+        font.setPointSize(11);
+        font.setBold(true);
+        m_textLabel->setFont(font);
+
+
+        QVBoxLayout *layout = new QVBoxLayout(this);
+
+        layout->addWidget(m_scrollArea,1);
+        layout->addWidget(m_textLabel);
+
+        setLayout(layout);
+    }
+private:
+    QLabel *m_imageLabel;
+    QLabel *m_textLabel;
+    QScrollArea *m_scrollArea;
+};
+
 #endif // LASERRADAR_H
