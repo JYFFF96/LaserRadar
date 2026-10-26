@@ -13,6 +13,7 @@
 #include <QSvgWidget>
 #include <QTcpSocket>
 #include <QNetworkProxy>
+#include <QSettings>
 #include <Eigen/Dense>
 LaserRadar::LaserRadar(QWidget *parent)
     : QMainWindow(parent)
@@ -90,6 +91,9 @@ LaserRadar::LaserRadar(QWidget *parent)
     connect(ui->lineEdit_min_points, &QLineEdit::editingFinished, this, &LaserRadar::updateObsParams);
     connect(ui->lineEdit_max_points, &QLineEdit::editingFinished, this, &LaserRadar::updateObsParams);
 
+    connect(ui->btn_saveObsSettings, &QPushButton::clicked, this, &LaserRadar::saveObsSettings);
+    connect(ui->btn_resetObsSettings, &QPushButton::clicked, this, &LaserRadar::resetObsSettingsToDefaults);
+    loadObsSettings();
 
     this->centralWidget()->setLayout(ui->verticalLayout_6);
     enableMouseTrackingForAll(this);
@@ -1033,6 +1037,70 @@ void LaserRadar::updateObsParams()
     params.minPts = ui->lineEdit_min_points->text().toInt();
     params.maxPts = ui->lineEdit_max_points->text().toInt();
     ui->pointCloud->setOBBParams(params);
+}
+
+
+void LaserRadar::loadObsSettings()
+{
+    QSettings settings("LaserRadar", "LaserRadar");
+    settings.beginGroup("ObstacleDetection");
+
+    ui->lineEdit_stop_x->setText(settings.value("stop_x", "9999").toString());
+    ui->lineEdit_stop_y->setText(settings.value("stop_y", "9999").toString());
+    ui->lineEdit_stop_z->setText(settings.value("stop_z", "9999").toString());
+    ui->lineEdit_range_x->setText(settings.value("range_x", "9999").toString());
+    ui->lineEdit_range_y->setText(settings.value("range_y", "9999").toString());
+    ui->lineEdit_range_z->setText(settings.value("range_z", "9999").toString());
+    ui->lineEdit_fileter->setText(settings.value("filter", "0.1").toString());
+    ui->lineEdit_dis->setText(settings.value("euclidean", "0.3").toString());
+    ui->lineEdit_min_points->setText(settings.value("min_points", "20").toString());
+    ui->lineEdit_max_points->setText(settings.value("max_points", "500").toString());
+
+    settings.endGroup();
+    updateObsParams();
+}
+
+void LaserRadar::saveObsSettings()
+{
+    QSettings settings("LaserRadar", "LaserRadar");
+    settings.beginGroup("ObstacleDetection");
+
+    settings.setValue("stop_x", ui->lineEdit_stop_x->text());
+    settings.setValue("stop_y", ui->lineEdit_stop_y->text());
+    settings.setValue("stop_z", ui->lineEdit_stop_z->text());
+    settings.setValue("range_x", ui->lineEdit_range_x->text());
+    settings.setValue("range_y", ui->lineEdit_range_y->text());
+    settings.setValue("range_z", ui->lineEdit_range_z->text());
+    settings.setValue("filter", ui->lineEdit_fileter->text());
+    settings.setValue("euclidean", ui->lineEdit_dis->text());
+    settings.setValue("min_points", ui->lineEdit_min_points->text());
+    settings.setValue("max_points", ui->lineEdit_max_points->text());
+
+    settings.endGroup();
+    settings.sync();
+    updateObsParams();
+}
+
+void LaserRadar::resetObsSettingsToDefaults()
+{
+    ui->lineEdit_stop_x->setText("9999");
+    ui->lineEdit_stop_y->setText("9999");
+    ui->lineEdit_stop_z->setText("9999");
+    ui->lineEdit_range_x->setText("9999");
+    ui->lineEdit_range_y->setText("9999");
+    ui->lineEdit_range_z->setText("9999");
+    ui->lineEdit_fileter->setText("0.1");
+    ui->lineEdit_dis->setText("0.3");
+    ui->lineEdit_min_points->setText("20");
+    ui->lineEdit_max_points->setText("500");
+
+    QSettings settings("LaserRadar", "LaserRadar");
+    settings.beginGroup("ObstacleDetection");
+    settings.remove("");
+    settings.endGroup();
+    settings.sync();
+
+    updateObsParams();
 }
 
 
