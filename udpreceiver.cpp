@@ -61,7 +61,11 @@ void UdpReceiver::stop()
     if (!running) return;
     if (socket1) { socket1->close(); socket1->deleteLater(); socket1=nullptr; }
     if (socket2) { socket2->close(); socket2->deleteLater(); socket2=nullptr; }
-    running=false; collectingFrame=false;
+    running=false;
+    scanBoundary.reset();
+    pointList.clear();
+    pointDataList.clear();
+    pcapPacketsBuffer.clear();
 }
 
 void UdpReceiver::closeConnection() { stop(); }
@@ -148,29 +152,22 @@ void UdpReceiver::parseDataBlock(const QByteArray &blk)
         if (quint8(b[0]) != 0xFF || quint8(b[1]) != 0xEE) continue;
 
         float az = ((quint8(b[2]) << 8) | quint8(b[3])) / 100.0f;
-        if (!collectingFrame) {
-            collectingFrame = true;
-            accumulatedAngle = 0;
-        } else {
-            float d = az - lastAzimuth;
-            if (d < 0) d += 360;
-            accumulatedAngle += d;
-        }
-
-        for (int j = 0; j < FAIRY_CHANNELS; ++j)
-            parseChannelData(b.mid(4 + j * 3, 3), az, j, 0.0, currentTimestamp);
-
-        lastAzimuth = az;
-        if (accumulatedAngle >= 360.0f) {
-            emit dataUpdated(pointList);
-            emit pointDataUpdated(pointDataList);
-            if (exportActive) handleExportFrame();
+        const auto boundary = scanBoundary.observe(az);
+        if (!boundary.accept) continue;
+        if (boundary.boundary) {
+            // Publish only complete scans; keep the displayed scan on packet loss.
+            // The block after the wrap belongs to the next scan.
+            if (boundary.complete) {
+                emit dataUpdated(pointList);
+                emit pointDataUpdated(pointDataList);
+                if (exportActive) handleExportFrame();
+            }
             pointList.clear();
             pointDataList.clear();
             pcapPacketsBuffer.clear();
-            collectingFrame = false;
-            accumulatedAngle = 0;
         }
+        for (int j = 0; j < FAIRY_CHANNELS; ++j)
+            parseChannelData(b.mid(4 + j * 3, 3), az, j, 0.0, currentTimestamp);
     }
 }
 
@@ -181,6 +178,7 @@ void UdpReceiver::parseChannelData(const QByteArray &d,float az,int idx,double R
 
     quint16 rawDist = (quint8(d[0]) << 8) | quint8(d[1]);
     rawDist &= 0x7FFF;
+    if (rawDist == 0) return;
     quint8 inten = quint8(d[2]);
 
     double dd = rawDist * FAIRY_DISTANCE_RESOLUTION_M;
@@ -241,7 +239,6 @@ void UdpReceiver::handleExportFrame()
     pointList.clear();
     pointDataList.clear();
     pcapPacketsBuffer.clear();
-    collectingFrame = false;
 }
 
 void UdpReceiver::appendToSingleFile()

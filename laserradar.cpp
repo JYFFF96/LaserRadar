@@ -950,7 +950,7 @@ void LaserRadar::onStopExport()
 
 void LaserRadar::on_checkBox_enable_clicked()
 {
-    ui->pointCloud->drawObb = true;
+    ui->pointCloud->setObstacleDetectionEnabled(true);
     ui->checkBox_enable->setChecked(true);
     ui->checkBox_disable->setChecked(false);
 }
@@ -958,7 +958,7 @@ void LaserRadar::on_checkBox_enable_clicked()
 
 void LaserRadar::on_checkBox_disable_clicked()
 {
-    ui->pointCloud->drawObb = false;
+    ui->pointCloud->setObstacleDetectionEnabled(false);
     ui->checkBox_disable->setChecked(true);
     ui->checkBox_enable->setChecked(false);
 }

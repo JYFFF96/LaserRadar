@@ -10,6 +10,7 @@
 #include <QFont>
 #include <QVector3D>
 #include <vector>
+#include <QFutureWatcher>
 #include "common.h"
 #include "colorbarwidget.h"
 #include <Eigen/Dense>
@@ -39,9 +40,17 @@ public:
     void clearPointCloud();
     void setGridVisible(bool visible);
     float pointSize = 2.0f;
-    void setOBBParams(const OBBParams& p) { m_obbParam = p; recomputeOBB(); }
+    void setOBBParams(const OBBParams& p) {
+        if (!std::isfinite(p.voxel) || p.voxel < 0.f ||
+            !std::isfinite(p.eps) || p.eps <= 0.f ||
+            p.minPts < 1 || p.maxPts < p.minPts) return;
+        m_obbParam = p;
+        ++detectionGeneration;
+        m_boxes.clear();
+        recomputeOBB();
+    }
 
-    bool drawObb = false;
+    void setObstacleDetectionEnabled(bool enabled);
 protected:
     void initializeGL() override;
     void resizeGL(int w, int h) override;
@@ -71,6 +80,12 @@ private:
     QList<Obstacle> obstacles;
 
     void recomputeOBB();          // 计算 OBB
+    void applyOBB(std::vector<OBB> detected);
+    bool drawObb = false;
+    bool detectionBusy = false;
+    bool detectionPending = false;
+    quint64 detectionGeneration = 0;
+    QFutureWatcher<std::vector<OBB>> detectionWatcher;
     void drawOBB(const OBB& b);   // 画 OBB
     OBBParams m_obbParam;
     std::vector<OBB> m_boxes;

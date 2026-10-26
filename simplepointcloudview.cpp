@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <limits>
 #include <QQuaternion>
+#include <QtConcurrent/QtConcurrentRun>
 using std::vector;
 
 namespace {
@@ -181,17 +182,39 @@ static OBB computeOBB(const vector<QVector3D>& pts, const vector<int>& ids){
 
 // ---- 主流程：从 displayPoints 计算 OBB 列表 ----
 void SimplePointCloudView::recomputeOBB(){
-    vector<QVector3D> cloud; cloud.reserve(points.size());
-    voxelDownsample(points, m_obbParam.voxel, cloud);
+    if (!drawObb) return;
+    if (detectionBusy) { detectionPending = true; return; }
+    detectionBusy = true;
+    detectionPending = false;
+    const auto snapshot = points;
+    const auto params = m_obbParam;
+    const auto generation = detectionGeneration;
+    disconnect(&detectionWatcher, nullptr, this, nullptr);
+    connect(&detectionWatcher, &QFutureWatcher<std::vector<OBB>>::finished, this,
+            [this, generation] {
+        detectionBusy = false;
+        if (drawObb && generation == detectionGeneration)
+            applyOBB(detectionWatcher.result());
+        if (detectionPending && drawObb) recomputeOBB();
+    });
+    // Worker captures values only: reception/rendering continue while clustering runs.
+    detectionWatcher.setFuture(QtConcurrent::run([snapshot, params] {
+        vector<QVector3D> cloud; cloud.reserve(snapshot.size());
+        voxelDownsample(snapshot, params.voxel, cloud);
 
-    auto clusters=gridCluster(cloud, m_obbParam.eps, m_obbParam.minPts,
-                              m_obbParam.maxPts, m_obbParam.rangeToleranceScale);
+        auto clusters=gridCluster(cloud, params.eps, params.minPts,
+                              params.maxPts, params.rangeToleranceScale);
 
-    std::vector<OBB> detected; detected.reserve(clusters.size());
-    for (auto& c: clusters){
-        if ((int)c.idx.size() < m_obbParam.minPts) continue;
-        detected.push_back(computeOBB(cloud, c.idx));
-    }
+        std::vector<OBB> detected; detected.reserve(clusters.size());
+        for (auto& c: clusters){
+            if ((int)c.idx.size() < params.minPts) continue;
+            detected.push_back(computeOBB(cloud, c.idx));
+        }
+        return detected;
+    }));
+}
+
+void SimplePointCloudView::applyOBB(std::vector<OBB> detected){
 
     // 与上一帧做最近邻匹配并平滑，减少 PCA 主轴符号翻转和包围框抖动。
     const float alpha = std::clamp(m_obbParam.smoothingAlpha, 0.f, 1.f);
@@ -249,6 +272,16 @@ SimplePointCloudView::SimplePointCloudView(QWidget *parent)
     zoom = 1.0f;
     xRot = -70.0f;  // 保持一定俯视角，同时让 Z 轴朝屏幕上方
     yRot = 0.0f;
+}
+
+void SimplePointCloudView::setObstacleDetectionEnabled(bool enabled)
+{
+    drawObb = enabled;
+    ++detectionGeneration;
+    detectionPending = false;
+    m_boxes.clear();
+    if (enabled) recomputeOBB();
+    update();
 }
 
 void SimplePointCloudView::initializeGL()
@@ -344,6 +377,9 @@ void SimplePointCloudView::setColorBarWidget(ColorBarWidget *colorBar)
 void SimplePointCloudView::clearPointCloud()
 {
     points.clear();
+    ++detectionGeneration;
+    detectionPending = false;
+    m_boxes.clear();
     update();
 }
 
