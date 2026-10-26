@@ -118,6 +118,10 @@ private:
 
     void updateExportSatatus(bool exporting);
 
+    void loadObsSettings();
+    void saveObsSettings();
+    void resetObsSettingsToDefaults();
+
 private:
     Ui::LaserRadar *ui;
     QPoint lastMousePos;
