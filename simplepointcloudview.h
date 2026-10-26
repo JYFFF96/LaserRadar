@@ -61,7 +61,9 @@ protected:
     void wheelEvent(QWheelEvent *event) override;
 
 private:
+    QList<PointXYZI> rawPoints;
     QList<PointXYZI> points;
+    void applyDisplayRange();
     float zoom = 1.0f;
     float xRot = 20.0f, yRot = -30.0f;
     QPoint lastMousePos;
