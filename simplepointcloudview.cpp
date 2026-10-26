@@ -343,15 +343,45 @@ void SimplePointCloudView::wheelEvent(QWheelEvent *event)
     update();
 }
 
+void SimplePointCloudView::applyDisplayRange()
+{
+    points.clear();
+    points.reserve(rawPoints.size());
+
+    for (const PointXYZI &pt : rawPoints) {
+        if (std::abs(pt.x) > displayRangeX ||
+            std::abs(pt.y) > displayRangeY ||
+            std::abs(pt.z) > displayRangeZ) {
+            continue;
+        }
+        points.append(pt);
+    }
+}
+
 void SimplePointCloudView::updatePointCloud(QList<PointXYZI> pointList)
 {
-    points = pointList;
+    rawPoints = std::move(pointList);
+    applyDisplayRange();
+
     if (drawObb) {
         recomputeOBB();
     }
     else {
         m_boxes.clear();
     }
+    update();
+}
+
+void SimplePointCloudView::setDisplayRange(float rangeX, float rangeY, float rangeZ)
+{
+    displayRangeX = std::max(0.0f, rangeX);
+    displayRangeY = std::max(0.0f, rangeY);
+    displayRangeZ = std::max(0.0f, rangeZ);
+
+    applyDisplayRange();
+    ++detectionGeneration;
+    m_boxes.clear();
+    if (drawObb) recomputeOBB();
     update();
 }
 
@@ -376,6 +406,7 @@ void SimplePointCloudView::setColorBarWidget(ColorBarWidget *colorBar)
 
 void SimplePointCloudView::clearPointCloud()
 {
+    rawPoints.clear();
     points.clear();
     ++detectionGeneration;
     detectionPending = false;

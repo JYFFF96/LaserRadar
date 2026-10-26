@@ -39,6 +39,7 @@ public:
     void setColorBarWidget(ColorBarWidget *colorBar);
     void clearPointCloud();
     void setGridVisible(bool visible);
+    void setDisplayRange(float rangeX, float rangeY, float rangeZ);
     float pointSize = 2.0f;
     void setOBBParams(const OBBParams& p) {
         if (!std::isfinite(p.voxel) || p.voxel < 0.f ||
@@ -60,11 +61,16 @@ protected:
     void wheelEvent(QWheelEvent *event) override;
 
 private:
+    QList<PointXYZI> rawPoints;
     QList<PointXYZI> points;
+    void applyDisplayRange();
     float zoom = 1.0f;
     float xRot = 20.0f, yRot = -30.0f;
     QPoint lastMousePos;
     bool gridVisible = true;
+    float displayRangeX = 9999.0f;
+    float displayRangeY = 9999.0f;
+    float displayRangeZ = 9999.0f;
     ColorBarWidget *colorBarWidget = nullptr;
 
 

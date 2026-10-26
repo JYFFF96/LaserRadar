@@ -15,6 +15,7 @@
 #include <QNetworkProxy>
 #include <QSettings>
 #include <Eigen/Dense>
+#include <algorithm>
 LaserRadar::LaserRadar(QWidget *parent)
     : QMainWindow(parent)
     , ui(new Ui::LaserRadar)
@@ -90,6 +91,11 @@ LaserRadar::LaserRadar(QWidget *parent)
     connect(ui->lineEdit_dis, &QLineEdit::editingFinished, this, &LaserRadar::updateObsParams);
     connect(ui->lineEdit_min_points, &QLineEdit::editingFinished, this, &LaserRadar::updateObsParams);
     connect(ui->lineEdit_max_points, &QLineEdit::editingFinished, this, &LaserRadar::updateObsParams);
+
+    for (QLineEdit *edit : { ui->lineEdit_stop_x, ui->lineEdit_stop_y, ui->lineEdit_stop_z,
+                             ui->lineEdit_range_x, ui->lineEdit_range_y, ui->lineEdit_range_z }) {
+        connect(edit, &QLineEdit::editingFinished, this, &LaserRadar::updateObsRanges);
+    }
 
     connect(ui->btn_saveObsSettings, &QPushButton::clicked, this, &LaserRadar::saveObsSettings);
     connect(ui->btn_resetObsSettings, &QPushButton::clicked, this, &LaserRadar::resetObsSettingsToDefaults);
@@ -1040,6 +1046,28 @@ void LaserRadar::updateObsParams()
 }
 
 
+void LaserRadar::updateObsRanges()
+{
+    const float rangeX = ui->lineEdit_range_x->text().toFloat();
+    const float rangeY = ui->lineEdit_range_y->text().toFloat();
+    const float rangeZ = ui->lineEdit_range_z->text().toFloat();
+
+    float stopX = ui->lineEdit_stop_x->text().toFloat();
+    float stopY = ui->lineEdit_stop_y->text().toFloat();
+    float stopZ = ui->lineEdit_stop_z->text().toFloat();
+
+    stopX = std::min(stopX, rangeX);
+    stopY = std::min(stopY, rangeY);
+    stopZ = std::min(stopZ, rangeZ);
+
+    ui->lineEdit_stop_x->setText(QString::number(stopX, 'g', 10));
+    ui->lineEdit_stop_y->setText(QString::number(stopY, 'g', 10));
+    ui->lineEdit_stop_z->setText(QString::number(stopZ, 'g', 10));
+
+    ui->pointCloud->setDisplayRange(rangeX, rangeY, rangeZ);
+}
+
+
 void LaserRadar::loadObsSettings()
 {
     QSettings settings("LaserRadar", "LaserRadar");
@@ -1057,11 +1085,14 @@ void LaserRadar::loadObsSettings()
     ui->lineEdit_max_points->setText(settings.value("max_points", "500").toString());
 
     settings.endGroup();
+    updateObsRanges();
     updateObsParams();
 }
 
 void LaserRadar::saveObsSettings()
 {
+    updateObsRanges();
+
     QSettings settings("LaserRadar", "LaserRadar");
     settings.beginGroup("ObstacleDetection");
 
@@ -1100,6 +1131,7 @@ void LaserRadar::resetObsSettingsToDefaults()
     settings.endGroup();
     settings.sync();
 
+    updateObsRanges();
     updateObsParams();
 }
 
