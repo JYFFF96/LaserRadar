@@ -975,7 +975,7 @@
        <item row="2" column="3">
         <widget class="QLabel" name="label_range_z">
          <property name="text">
-          <string>Z轴上下方向最搞感知距离</string>
+          <string>Z轴上下方向最高感知距离</string>
          </property>
         </widget>
        </item>
