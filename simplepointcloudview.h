@@ -25,6 +25,8 @@ struct OBBParams {
     float eps   = 0.30f;   // 欧氏距离 (m)
     int   minPts= 20;       // 最少点云数
     int   maxPts= 500;     // 最大点云数
+    float rangeToleranceScale = 0.015f; // 随距离增大聚类半径，补偿远处点云变稀疏
+    float smoothingAlpha = 0.35f;       // 包围框时序平滑系数，1 表示不平滑
 };
 class SimplePointCloudView : public QOpenGLWidget, protected QOpenGLFunctions
 {
