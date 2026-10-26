@@ -1,4 +1,4 @@
-QT       += core gui network opengl openglwidgets svgwidgets webenginewidgets
+QT       += core gui network opengl openglwidgets svgwidgets webenginewidgets concurrent
 
 greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
 greaterThan(QT_MAJOR_VERSION, 5): QT += opengl
@@ -25,6 +25,7 @@ SOURCES += \
     udpreceiver.cpp
 
 HEADERS += \
+    scanboundary.h \
     GradientEditorWidget.h \
     PlaybackController.h \
     ReplayWindow.h \

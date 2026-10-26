@@ -17,6 +17,7 @@
 #include "common.h"
 #include "exportframedialog.h"
 #include "exporter.h"
+#include "scanboundary.h"
 
 #include <liblas/liblas.hpp>
 #include <QByteArray>
@@ -69,9 +70,7 @@ private:
     QMutex mutex;
 
     bool running = false;
-    bool collectingFrame = false;
-    float accumulatedAngle = 0.0f;
-    float lastAzimuth = 0.0f;
+    ScanBoundary scanBoundary;
     double currentTimestamp = 0.0;
 
     QList<PointXYZI> pointList;
