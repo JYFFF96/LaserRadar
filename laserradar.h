@@ -121,6 +121,7 @@ private:
     void loadObsSettings();
     void saveObsSettings();
     void resetObsSettingsToDefaults();
+    void updateObsRanges();
 
 private:
     Ui::LaserRadar *ui;
