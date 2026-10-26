@@ -345,13 +345,35 @@ void SimplePointCloudView::wheelEvent(QWheelEvent *event)
 
 void SimplePointCloudView::updatePointCloud(QList<PointXYZI> pointList)
 {
-    points = pointList;
+    points.clear();
+    points.reserve(pointList.size());
+
+    for (const PointXYZI &pt : pointList) {
+        if (std::abs(pt.x) > displayRangeX ||
+            std::abs(pt.y) > displayRangeY ||
+            std::abs(pt.z) > displayRangeZ) {
+            continue;
+        }
+        points.append(pt);
+    }
+
     if (drawObb) {
         recomputeOBB();
     }
     else {
         m_boxes.clear();
     }
+    update();
+}
+
+void SimplePointCloudView::setDisplayRange(float rangeX, float rangeY, float rangeZ)
+{
+    displayRangeX = std::max(0.0f, rangeX);
+    displayRangeY = std::max(0.0f, rangeY);
+    displayRangeZ = std::max(0.0f, rangeZ);
+
+    ++detectionGeneration;
+    m_boxes.clear();
     update();
 }
 
