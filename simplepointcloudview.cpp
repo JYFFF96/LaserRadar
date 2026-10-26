@@ -7,6 +7,9 @@
 #include <QOpenGLVertexArrayObject>
 #include <unordered_map>
 #include <algorithm>
+#include <limits>
+#include <QQuaternion>
+#include <QtConcurrent/QtConcurrentRun>
 using std::vector;
 
 namespace {
@@ -27,18 +30,28 @@ struct VKeyHash { size_t operator()(const VKey& k) const {
         return (std::hash<long long>()(((long long)k.x<<42)^((long long)k.y<<21)^k.z)); }};
 static bool operator==(const VKey&a,const VKey&b){ return a.x==b.x&&a.y==b.y&&a.z==b.z; }
 
+struct VoxelAccumulator { QVector3D sum; int count = 0; };
 static void voxelDownsample(const QList<PointXYZI>& in, float voxel, vector<QVector3D>& out){
-    if (voxel<=0.f) { out.reserve(in.size()); for (auto& p: in) out.emplace_back(p.x,p.y,p.z); return; }
-    std::unordered_map<VKey,QVector3D,VKeyHash> grid; grid.reserve(in.size());
-    for (const auto& p: in){
-        VKey k{ int(std::floor(p.x/voxel)), int(std::floor(p.y/voxel)), int(std::floor(p.z/voxel)) };
-        if (!grid.count(k)) grid[k] = QVector3D(p.x,p.y,p.z);
+    if (voxel<=0.f) {
+        out.reserve(in.size());
+        for (const auto& p: in)
+            if (std::isfinite(p.x) && std::isfinite(p.y) && std::isfinite(p.z))
+                out.emplace_back(p.x,p.y,p.z);
+        return;
     }
-    out.reserve(grid.size()); for (auto& kv: grid) out.push_back(kv.second);
+    std::unordered_map<VKey,VoxelAccumulator,VKeyHash> grid; grid.reserve(in.size());
+    for (const auto& p: in){
+        if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z)) continue;
+        VKey k{ int(std::floor(p.x/voxel)), int(std::floor(p.y/voxel)), int(std::floor(p.z/voxel)) };
+        auto& value = grid[k];
+        value.sum += QVector3D(p.x,p.y,p.z);
+        ++value.count;
+    }
+    out.reserve(grid.size());
+    for (const auto& kv: grid) out.push_back(kv.second.sum / float(kv.second.count));
 }
 
-// ---- 简易 DBSCAN（O(N^2)，先跑通） ----
-static inline float sqr(float x){ return x*x; }
+// ---- 基于空间栅格加速的 DBSCAN ----
 #include <unordered_map>
 #include <vector>
 #include <queue>
@@ -61,9 +74,9 @@ inline bool operator==(const CellKey& a, const CellKey& b) noexcept {
 }
 static std::vector<Cluster>
 gridCluster(const std::vector<QVector3D>& pts,
-            float eps, int minPts, int maxPts)
+            float eps, int minPts, int maxPts, float rangeToleranceScale)
 {
-    const float eps2 = eps*eps;
+    if (pts.empty() || eps <= 0.f || minPts <= 0 || maxPts < minPts) return {};
     const float cell = eps;                 // 一个单元边长≈eps
     const int   N    = (int)pts.size();
 
@@ -84,58 +97,53 @@ gridCluster(const std::vector<QVector3D>& pts,
     }
 
     // 2) 访问标记 + 结果
-    std::vector<char> vis(N, 0);
+    // 0=未访问，1=噪声（之后仍可被核心点吸收），2=已加入簇
+    std::vector<unsigned char> state(N, 0);
     std::vector<Cluster> clusters;
     clusters.reserve(N/32);
 
-    auto push_if_near = [&](int j, int cid, std::queue<int>& q, Cluster& C){
-        if (vis[j]) return;
-        const QVector3D& a = pts[j];
-        // 距离验证（只查近邻桶，大多数都能快速过滤）
-        // 注意：这里不需要对比到所有邻居，只对已入队元素生长即可
-        vis[j]=1; q.push(j); C.idx.push_back(j);
+    auto regionQuery = [&](int index) {
+        std::vector<int> neighbours;
+        const auto& p = pts[index];
+        const float range = std::sqrt(p.x()*p.x() + p.y()*p.y() + p.z()*p.z());
+        const float tolerance = eps * (1.f + std::min(range, 50.f) * std::max(0.f, rangeToleranceScale));
+        const float tolerance2 = tolerance * tolerance;
+        const int radius = std::max(1, int(std::ceil(tolerance / cell)));
+        const CellKey& key = keys[index];
+        for (int dx=-radius; dx<=radius; ++dx)
+            for (int dy=-radius; dy<=radius; ++dy)
+                for (int dz=-radius; dz<=radius; ++dz) {
+                    const auto it = buckets.find({key.x+dx, key.y+dy, key.z+dz});
+                    if (it == buckets.end()) continue;
+                    for (int j : it->second) {
+                        const QVector3D delta = pts[j] - p;
+                        if (QVector3D::dotProduct(delta, delta) <= tolerance2) neighbours.push_back(j);
+                    }
+                }
+        return neighbours;
     };
 
-    // 3) 遍历所有点，做“桶邻域”的区域生长（27 邻域）
+    // 3) 标准 DBSCAN：只有核心点才继续扩展，避免细长噪声链连成假障碍物。
     for (int i=0;i<N;++i) {
-        if (vis[i]) continue;
+        if (state[i] != 0) continue;
+        auto seedNeighbours = regionQuery(i);
+        if ((int)seedNeighbours.size() < minPts) { state[i] = 1; continue; }
 
-        // 局部邻域查找
-        Cluster C; C.idx.reserve(64);
-        std::queue<int> q;
-        vis[i]=1; q.push(i); C.idx.push_back(i);
-
-        while (!q.empty()) {
-            int u = q.front(); q.pop();
-            const CellKey& ku = keys[u];
-
-            for (int dx=-1; dx<=1; ++dx)
-                for (int dy=-1; dy<=1; ++dy)
-                    for (int dz=-1; dz<=1; ++dz) {
-                        CellKey kn{ku.x+dx, ku.y+dy, ku.z+dz};
-                        auto it = buckets.find(kn);
-                        if (it==buckets.end()) continue;
-
-                        // 检查该桶里的点
-                        for (int j : it->second) {
-                            if (vis[j]) continue;
-                            const auto& pj = pts[j];
-                            const auto& pu = pts[u];
-                            float d2 = (pj.x()-pu.x())*(pj.x()-pu.x())
-                                       + (pj.y()-pu.y())*(pj.y()-pu.y())
-                                       + (pj.z()-pu.z())*(pj.z()-pu.z());
-                            if (d2 <= eps2) push_if_near(j, 0, q, C);
-                        }
-                    }
-
-            if ((int)C.idx.size() >= maxPts) break; // 防止巨大簇
+        Cluster cluster; cluster.idx.reserve(std::min(maxPts, 256));
+        std::queue<int> queue;
+        queue.push(i); state[i] = 2; cluster.idx.push_back(i);
+        while (!queue.empty()) {
+            const int current = queue.front(); queue.pop();
+            auto neighbours = regionQuery(current);
+            if ((int)neighbours.size() < minPts) continue;
+            for (int j : neighbours) {
+                if (state[j] == 2) continue;
+                state[j] = 2;
+                if ((int)cluster.idx.size() < maxPts) cluster.idx.push_back(j);
+                queue.push(j);
+            }
         }
-
-        if ((int)C.idx.size() >= minPts) {
-            // 可选：截断到 maxPts，避免 OBB PCA 超大矩阵
-            if ((int)C.idx.size() > maxPts) C.idx.resize(maxPts);
-            clusters.push_back(std::move(C));
-        }
+        if ((int)cluster.idx.size() >= minPts) clusters.push_back(std::move(cluster));
     }
     return clusters;
 }
@@ -174,16 +182,68 @@ static OBB computeOBB(const vector<QVector3D>& pts, const vector<int>& ids){
 
 // ---- 主流程：从 displayPoints 计算 OBB 列表 ----
 void SimplePointCloudView::recomputeOBB(){
-    vector<QVector3D> cloud; cloud.reserve(points.size());
-    voxelDownsample(points, m_obbParam.voxel, cloud);
+    if (!drawObb) return;
+    if (detectionBusy) { detectionPending = true; return; }
+    detectionBusy = true;
+    detectionPending = false;
+    const auto snapshot = points;
+    const auto params = m_obbParam;
+    const auto generation = detectionGeneration;
+    disconnect(&detectionWatcher, nullptr, this, nullptr);
+    connect(&detectionWatcher, &QFutureWatcher<std::vector<OBB>>::finished, this,
+            [this, generation] {
+        detectionBusy = false;
+        if (drawObb && generation == detectionGeneration)
+            applyOBB(detectionWatcher.result());
+        if (detectionPending && drawObb) recomputeOBB();
+    });
+    // Worker captures values only: reception/rendering continue while clustering runs.
+    detectionWatcher.setFuture(QtConcurrent::run([snapshot, params] {
+        vector<QVector3D> cloud; cloud.reserve(snapshot.size());
+        voxelDownsample(snapshot, params.voxel, cloud);
 
-    auto clusters=gridCluster(cloud, m_obbParam.eps, m_obbParam.minPts, m_obbParam.maxPts);
+        auto clusters=gridCluster(cloud, params.eps, params.minPts,
+                              params.maxPts, params.rangeToleranceScale);
 
-    m_boxes.clear(); m_boxes.reserve(clusters.size());
-    for (auto& c: clusters){
-        if ((int)c.idx.size() < m_obbParam.minPts) continue;
-        m_boxes.push_back(computeOBB(cloud, c.idx));
+        std::vector<OBB> detected; detected.reserve(clusters.size());
+        for (auto& c: clusters){
+            if ((int)c.idx.size() < params.minPts) continue;
+            detected.push_back(computeOBB(cloud, c.idx));
+        }
+        return detected;
+    }));
+}
+
+void SimplePointCloudView::applyOBB(std::vector<OBB> detected){
+
+    // 与上一帧做最近邻匹配并平滑，减少 PCA 主轴符号翻转和包围框抖动。
+    const float alpha = std::clamp(m_obbParam.smoothingAlpha, 0.f, 1.f);
+    std::vector<char> matched(m_boxes.size(), 0);
+    for (auto& box : detected) {
+        int best = -1; float bestDistance2 = std::numeric_limits<float>::max();
+        const float range = box.center.length();
+        const float gate = std::max(1.f, m_obbParam.eps * 4.f + range * 0.03f);
+        for (int i=0; i<(int)m_boxes.size(); ++i) {
+            if (matched[i]) continue;
+            const float distance2 = (box.center - m_boxes[i].center).lengthSquared();
+            if (distance2 < bestDistance2 && distance2 <= gate*gate) { best=i; bestDistance2=distance2; }
+        }
+        if (best < 0) continue;
+        matched[best] = 1;
+        const OBB& previous = m_boxes[best];
+        box.center = previous.center * (1.f-alpha) + box.center * alpha;
+        box.half = previous.half * (1.f-alpha) + box.half * alpha;
+        for (int axis=0; axis<3; ++axis) {
+            QVector3D oldAxis(previous.R(0,axis), previous.R(1,axis), previous.R(2,axis));
+            QVector3D newAxis(box.R(0,axis), box.R(1,axis), box.R(2,axis));
+            if (QVector3D::dotProduct(oldAxis, newAxis) < 0.f)
+                for (int row=0; row<3; ++row) box.R(row,axis) *= -1.f;
+        }
+        const QQuaternion oldRotation = QQuaternion::fromRotationMatrix(previous.R);
+        const QQuaternion newRotation = QQuaternion::fromRotationMatrix(box.R);
+        box.R = QQuaternion::slerp(oldRotation, newRotation, alpha).toRotationMatrix();
     }
+    m_boxes = std::move(detected);
     update();  // 让 paintGL 重绘
 }
 
@@ -212,6 +272,16 @@ SimplePointCloudView::SimplePointCloudView(QWidget *parent)
     zoom = 1.0f;
     xRot = -70.0f;  // 保持一定俯视角，同时让 Z 轴朝屏幕上方
     yRot = 0.0f;
+}
+
+void SimplePointCloudView::setObstacleDetectionEnabled(bool enabled)
+{
+    drawObb = enabled;
+    ++detectionGeneration;
+    detectionPending = false;
+    m_boxes.clear();
+    if (enabled) recomputeOBB();
+    update();
 }
 
 void SimplePointCloudView::initializeGL()
@@ -307,6 +377,9 @@ void SimplePointCloudView::setColorBarWidget(ColorBarWidget *colorBar)
 void SimplePointCloudView::clearPointCloud()
 {
     points.clear();
+    ++detectionGeneration;
+    detectionPending = false;
+    m_boxes.clear();
     update();
 }
 
